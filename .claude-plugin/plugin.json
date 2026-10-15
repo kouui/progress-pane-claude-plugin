@@ -1,0 +1,40 @@
+{
+  "name": "progress-pane",
+  "version": "0.3.0",
+  "description": "A Progress pane on the right: the steps of the current task, from the built-in TodoWrite or from its own progress tool.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "kouui"
+  },
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "description": "Off: the plugin registers nothing (no progress tool, no advice in the system prompt, no pane or band).",
+      "default": true
+    },
+    "view": {
+      "type": "string",
+      "title": "View",
+      "description": "pane: a docked pane on the right; line: one row above the prompt, no width taken. /progress opens the pane either way.",
+      "default": "pane"
+    },
+    "paneColumns": {
+      "type": "number",
+      "title": "Pane width (columns)",
+      "description": "Width the docked pane asks for. A width you drag it to wins.",
+      "default": 18,
+      "min": 10,
+      "max": 120
+    }
+  },
+  "homepage": "https://github.com/kouui/progress-pane-claude-plugin",
+  "repository": "https://github.com/kouui/progress-pane-claude-plugin",
+  "keywords": [
+    "progress",
+    "todo",
+    "pane",
+    "mod",
+    "ui"
+  ]
+}
