@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import type { DiffFile, Step } from '../types'
 
-import { baseName, mergeFiles, parseNumstat, parseUntracked, totals } from './diff'
+import { baseName, groupByDir, mergeFiles, parseNumstat, parseUntracked, totals } from './diff'
 import { MARK, clean, countDone, fromTodos, hasOpenSteps, touch } from './steps'
 
 const PANE = 'progress'
@@ -11,6 +11,7 @@ const TOOL = 'mcp__progress-pane__progress'
 const steps = atom({ plugin: 'progress-pane', key: 'steps' } as const, [])
 const isFolded = atom({ plugin: 'progress-pane', key: 'isFolded' } as const, true)
 const changes = atom({ plugin: 'progress-pane', key: 'diff' } as const, [])
+const collapsedDirs = atom({ plugin: 'progress-pane', key: 'collapsedDirs' } as const, [])
 
 const DESCRIPTION =
   'Shows the steps of the current task in a Progress pane the person sees. ' +
@@ -217,6 +218,7 @@ export const register: Register = (on, options) => {
     const rest = list.filter(s => s.status !== 'done')
     const shown = folded ? rest : list
     const sum = totals(files)
+    const shut = await read($, collapsedDirs)
 
     return (
       <Box flexDirection="column" paddingX={1} paddingTop={1}>
@@ -259,17 +261,38 @@ export const register: Register = (on, options) => {
               <Text bold color="claude">Changes</Text>
               <Text dimColor> {sum.files}</Text>
             </Box>
-            {files.slice(0, DIFF_MAX_ROWS).map(f => (
-              <Box key={f.path}>
-                <Box flexGrow={1} flexShrink={1}>
-                  <Text wrap="truncate-start" dimColor>{baseName(f.path)}</Text>
+            {groupByDir(files.slice(0, DIFF_MAX_ROWS)).map(g => {
+              const isCollapsed = shut.includes(g.dir)
+
+              return (
+                <Box key={g.dir} flexDirection="column">
+                  <Box>
+                    <Box flexGrow={1} flexShrink={1}>
+                      <Button
+                        plain
+                        key={`dir:${g.dir}`}
+                        onPress={() => update($, collapsedDirs, v => (v.includes(g.dir) ? v.filter(d => d !== g.dir) : [...v, g.dir]))}
+                      >
+                        <Text wrap="truncate-start">{isCollapsed ? '▸ ' : '▾ '}{g.dir}</Text>
+                      </Button>
+                    </Box>
+                    <Text color="success"> +{g.added}</Text>
+                    <Text color="error"> -{g.removed}</Text>
+                  </Box>
+                  {!isCollapsed && g.files.map(f => (
+                    <Box key={f.path} paddingLeft={2}>
+                      <Box flexGrow={1} flexShrink={1}>
+                        <Text wrap="truncate-start" dimColor>{baseName(f.path)}</Text>
+                      </Box>
+                      {f.kind === 'M' && <Text color="success"> +{f.added}</Text>}
+                      {f.kind === 'M' && <Text color="error"> -{f.removed}</Text>}
+                      {f.kind === 'N' && <Text color="success"> new</Text>}
+                      {f.kind === 'B' && <Text dimColor> bin</Text>}
+                    </Box>
+                  ))}
                 </Box>
-                {f.kind === 'M' && <Text color="success"> +{f.added}</Text>}
-                {f.kind === 'M' && <Text color="error"> -{f.removed}</Text>}
-                {f.kind === 'N' && <Text color="success"> new</Text>}
-                {f.kind === 'B' && <Text dimColor> bin</Text>}
-              </Box>
-            ))}
+              )
+            })}
             {files.length > DIFF_MAX_ROWS && <Text dimColor>+{files.length - DIFF_MAX_ROWS} more</Text>}
             <Box marginTop={1}>
               <Box flexGrow={1}>

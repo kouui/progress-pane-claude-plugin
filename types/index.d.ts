@@ -5,6 +5,6 @@ export type DiffFile = { path: string; added: number; removed: number; kind: 'M'
 
 declare module 'claude-code' {
   interface PluginState {
-    'progress-pane': { steps: Step[]; isFolded: boolean; diff: DiffFile[] }
+    'progress-pane': { steps: Step[]; isFolded: boolean; diff: DiffFile[]; collapsedDirs: string[] }
   }
 }

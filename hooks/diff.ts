@@ -44,3 +44,30 @@ export function baseName(path: string): string {
 
   return i < 0 ? path : path.slice(i + 1)
 }
+
+/** The directory a path is in, `./` for the repository root. */
+export function dirOf(path: string): string {
+  const i = path.lastIndexOf('/')
+
+  return i < 0 ? './' : `${path.slice(0, i)}/`
+}
+
+export type DirGroup = { dir: string; files: DiffFile[]; added: number; removed: number }
+
+/** The files grouped by full directory path, groups by directory, files by name. */
+export function groupByDir(files: readonly DiffFile[]): DirGroup[] {
+  const groups = new Map<string, DirGroup>()
+  for (const f of files) {
+    const dir = dirOf(f.path)
+    const g = groups.get(dir) ?? { dir, files: [], added: 0, removed: 0 }
+    g.files.push(f)
+    g.added += f.added
+    g.removed += f.removed
+    groups.set(dir, g)
+  }
+  const byName = (a: DiffFile, b: DiffFile) => (baseName(a.path) < baseName(b.path) ? -1 : baseName(a.path) > baseName(b.path) ? 1 : 0)
+
+  return [...groups.values()]
+    .map(g => ({ ...g, files: [...g.files].sort(byName) }))
+    .sort((a, b) => (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0))
+}

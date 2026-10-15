@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { baseName, mergeFiles, parseNumstat, parseUntracked, totals } from '../hooks/diff'
+import { baseName, groupByDir, mergeFiles, parseNumstat, parseUntracked, totals } from '../hooks/diff'
 
 test('parseNumstat reads counts and marks binary files', async () => {
   const out = parseNumstat('12\t3\tsrc/a.ts\n-\t-\timg/b.png\n0\t5\tc.md\nnot a line\n')
@@ -30,4 +30,17 @@ test('mergeFiles puts tracked first and shows a path once', async () => {
 test('baseName keeps the last segment', async () => {
   expect(baseName('hooks/register.tsx')).toBe('register.tsx')
   expect(baseName('README.md')).toBe('README.md')
+})
+
+test('groupByDir groups by full directory path and sums each group', async () => {
+  const groups = groupByDir([
+    { path: 'src/ui/b.ts', added: 2, removed: 1, kind: 'M' },
+    { path: 'README.md', added: 1, removed: 0, kind: 'M' },
+    { path: 'src/ui/a.ts', added: 3, removed: 0, kind: 'M' },
+    { path: 'src/new.ts', added: 0, removed: 0, kind: 'N' },
+  ])
+  expect(groups.map(g => g.dir)).toEqual(['./', 'src/', 'src/ui/'])
+  const ui = groups[2]
+  expect(ui.files.map(f => f.path)).toEqual(['src/ui/a.ts', 'src/ui/b.ts'])
+  expect([ui.added, ui.removed]).toEqual([5, 1])
 })
