@@ -52,17 +52,20 @@ export function dirOf(path: string): string {
   return i < 0 ? './' : `${path.slice(0, i)}/`
 }
 
-export type DirGroup = { dir: string; files: DiffFile[]; added: number; removed: number }
+/** `trackedCount` files carry line counts; `newCount` are untracked and have none. */
+export type DirGroup = { dir: string; files: DiffFile[]; added: number; removed: number; trackedCount: number; newCount: number }
 
 /** The files grouped by full directory path, groups by directory, files by name. */
 export function groupByDir(files: readonly DiffFile[]): DirGroup[] {
   const groups = new Map<string, DirGroup>()
   for (const f of files) {
     const dir = dirOf(f.path)
-    const g = groups.get(dir) ?? { dir, files: [], added: 0, removed: 0 }
+    const g = groups.get(dir) ?? { dir, files: [], added: 0, removed: 0, trackedCount: 0, newCount: 0 }
     g.files.push(f)
     g.added += f.added
     g.removed += f.removed
+    if (f.kind === 'N') g.newCount += 1
+    else g.trackedCount += 1
     groups.set(dir, g)
   }
   const byName = (a: DiffFile, b: DiffFile) => (baseName(a.path) < baseName(b.path) ? -1 : baseName(a.path) > baseName(b.path) ? 1 : 0)

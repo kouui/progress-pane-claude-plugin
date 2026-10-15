@@ -276,8 +276,9 @@ export const register: Register = (on, options) => {
                         <Text wrap="truncate-start">{isCollapsed ? '▸ ' : '▾ '}{g.dir}</Text>
                       </Button>
                     </Box>
-                    <Text color="success"> +{g.added}</Text>
-                    <Text color="error"> -{g.removed}</Text>
+                    {g.trackedCount > 0 && <Text color="success"> +{g.added}</Text>}
+                    {g.trackedCount > 0 && <Text color="error"> -{g.removed}</Text>}
+                    {g.newCount > 0 && <Text color="success"> {g.trackedCount > 0 ? '· ' : ''}{g.newCount} new</Text>}
                   </Box>
                   {!isCollapsed && g.files.map(f => (
                     <Box key={f.path} paddingLeft={2}>

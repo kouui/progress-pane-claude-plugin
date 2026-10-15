@@ -43,4 +43,6 @@ test('groupByDir groups by full directory path and sums each group', async () =>
   const ui = groups[2]
   expect(ui.files.map(f => f.path)).toEqual(['src/ui/a.ts', 'src/ui/b.ts'])
   expect([ui.added, ui.removed]).toEqual([5, 1])
+  expect([ui.trackedCount, ui.newCount]).toEqual([2, 0])
+  expect([groups[1].trackedCount, groups[1].newCount]).toEqual([0, 1]) // src/ holds only the new file
 })
