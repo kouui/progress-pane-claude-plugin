@@ -1,7 +1,7 @@
 {
   "name": "progress-pane",
-  "version": "0.4.0",
-  "description": "A Progress pane on the right: the steps of the current task, from the built-in TodoWrite or from its own progress tool.",
+  "version": "0.5.0",
+  "description": "A Progress pane on the right: the steps of the current task, and the uncommitted git changes under them.",
   "types": "./types/index.d.ts",
   "author": {
     "name": "kouui"
@@ -23,9 +23,15 @@
       "type": "number",
       "title": "Pane width (columns)",
       "description": "Width the docked pane asks for. A width you drag it to wins.",
-      "default": 18,
+      "default": 27,
       "min": 10,
       "max": 120
+    },
+    "showDiff": {
+      "type": "boolean",
+      "title": "Show uncommitted changes",
+      "description": "List the uncommitted files (+added -removed against HEAD) under the steps in the pane.",
+      "default": true
     }
   },
   "homepage": "https://github.com/kouui/progress-pane-claude-plugin",

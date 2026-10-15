@@ -1,14 +1,16 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { Step } from '../types'
+import type { DiffFile, Step } from '../types'
 
+import { baseName, mergeFiles, parseNumstat, parseUntracked, totals } from './diff'
 import { MARK, clean, countDone, fromTodos, hasOpenSteps, touch } from './steps'
 
 const PANE = 'progress'
 const TOOL = 'mcp__progress-pane__progress'
 const steps = atom({ plugin: 'progress-pane', key: 'steps' } as const, [])
 const isFolded = atom({ plugin: 'progress-pane', key: 'isFolded' } as const, true)
+const changes = atom({ plugin: 'progress-pane', key: 'diff' } as const, [])
 
 const DESCRIPTION =
   'Shows the steps of the current task in a Progress pane the person sees. ' +
@@ -35,7 +37,37 @@ async function openAlways($: any): Promise<void> {
 
 const MARK_COLOR = { done: 'success', in_progress: 'claude', pending: 'subtle' } as const
 
-const view = { isLine: false, columns: 18 }
+const view = { isLine: false, columns: 27 }
+
+// the Changes list: uncommitted work against HEAD, read after tools that can change files
+const diff = { isEnabled: true, readAt: 0 }
+const DIFF_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Bash', 'PowerShell'])
+const DIFF_MIN_GAP_MS = 1500
+const DIFF_MAX_ROWS = 12
+
+/** `git diff HEAD --numstat` and the untracked files, or [] where there is no repository. */
+async function readChanges($: any): Promise<DiffFile[]> {
+  const cwd = await $.session.cwd()
+  const git = ['git', '-c', 'core.quotepath=false', '-C', cwd]
+  const tracked = await $.process.run([...git, 'diff', 'HEAD', '--numstat', '--no-renames'], { timeoutMs: 2000 })
+  const others = await $.process.run([...git, 'ls-files', '--others', '--exclude-standard'], { timeoutMs: 2000 })
+
+  return mergeFiles(
+    tracked.exitCode === 0 ? parseNumstat(tracked.stdout) : [],
+    others.exitCode === 0 ? parseUntracked(others.stdout) : [],
+  )
+}
+
+async function refreshChanges($: any, isForced: boolean): Promise<void> {
+  if (!diff.isEnabled) return
+  try {
+    const now = await $.clock.now()
+    if (!isForced && now - diff.readAt < DIFF_MIN_GAP_MS) return
+    diff.readAt = now
+    const files = await readChanges($)
+    await update($, changes, () => files)
+  } catch { /* the list keeps its last value */ }
+}
 
 const INDEX_KEY = 'index'
 const keyOf = (id: string) => `steps:${id}`
@@ -64,7 +96,8 @@ async function load($: any): Promise<Step[]> {
 export const register: Register = (on, options) => {
   if (options.enabled === false || options.enabled === 'false') return // switched off: no tool, no advice, no pane
   view.isLine = options.view === 'line'
-  view.columns = Number(options.paneColumns) > 0 ? Number(options.paneColumns) : 18
+  view.columns = Number(options.paneColumns) > 0 ? Number(options.paneColumns) : 27
+  diff.isEnabled = options.showDiff !== false && options.showDiff !== 'false'
 
   on('session.start', async ($, e, next) => {
     await $.tool.register({
@@ -98,6 +131,7 @@ export const register: Register = (on, options) => {
       await update($, steps, () => kept)
       if (hasOpenSteps(kept)) await openPane($)
     }
+    await refreshChanges($, true)
 
     return next(e)
   })
@@ -138,6 +172,14 @@ export const register: Register = (on, options) => {
     return ran
   }).catch(async ($, e, next) => next(e))
 
+  // after a tool that can change files, read the uncommitted changes again
+  on('tool.call', async ($, e, next) => {
+    const ran = await next(e)
+    if (DIFF_TOOLS.has(e.tool)) await refreshChanges($, false)
+
+    return ran
+  }).catch(async ($, e, next) => next(e))
+
   // view "line": one row above the prompt, no width taken from the conversation
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!view.isLine) return next(e)
@@ -160,18 +202,23 @@ export const register: Register = (on, options) => {
     const list = await read($, steps)
     const folded = await read($, isFolded)
 
-    if (list.length === 0) return <Text dimColor>No steps yet.</Text>
+    const files = diff.isEnabled ? await read($, changes) : []
+
+    if (list.length === 0 && files.length === 0) return <Text dimColor>No steps yet.</Text>
 
     const done = list.filter(s => s.status === 'done')
     const rest = list.filter(s => s.status !== 'done')
     const shown = folded ? rest : list
+    const sum = totals(files)
 
     return (
       <Box flexDirection="column" paddingX={1} paddingTop={1}>
-        <Box marginBottom={1}>
-          <Text bold color="claude">Progress</Text>
-          <Text dimColor> {done.length}/{list.length}</Text>
-        </Box>
+        {list.length > 0 && (
+          <Box marginBottom={1}>
+            <Text bold color="claude">Progress</Text>
+            <Text dimColor> {done.length}/{list.length}</Text>
+          </Box>
+        )}
         {done.length > 0 && (
           <Box marginBottom={1}>
             <Button plain key="fold" onPress={() => update($, isFolded, v => !v)}>
@@ -199,6 +246,30 @@ export const register: Register = (on, options) => {
             </Box>
           ))}
         </Box>
+        {files.length > 0 && (
+          <Box flexDirection="column" marginTop={list.length > 0 ? 1 : 0}>
+            <Box marginBottom={1}>
+              <Text bold color="claude">Changes</Text>
+              <Text dimColor> {sum.files}</Text>
+            </Box>
+            {files.slice(0, DIFF_MAX_ROWS).map(f => (
+              <Box key={f.path}>
+                <Box flexGrow={1} flexShrink={1}>
+                  <Text wrap="truncate-start" dimColor>{baseName(f.path)}</Text>
+                </Box>
+                {f.kind === 'M' && <Text color="success"> +{f.added}</Text>}
+                {f.kind === 'M' && <Text color="error"> -{f.removed}</Text>}
+                {f.kind === 'N' && <Text color="success"> new</Text>}
+                {f.kind === 'B' && <Text dimColor> bin</Text>}
+              </Box>
+            ))}
+            {files.length > DIFF_MAX_ROWS && <Text dimColor>+{files.length - DIFF_MAX_ROWS} more</Text>}
+            <Box marginTop={1}>
+              <Text color="success">+{sum.added}</Text>
+              <Text color="error"> -{sum.removed}</Text>
+            </Box>
+          </Box>
+        )}
       </Box>
     )
   })
