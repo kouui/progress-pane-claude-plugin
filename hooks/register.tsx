@@ -180,6 +180,13 @@ export const register: Register = (on, options) => {
     return ran
   }).catch(async ($, e, next) => next(e))
 
+  // at the end of every turn: files may have changed outside this session's tools
+  on('turn.complete', async ($, e, next) => {
+    await refreshChanges($, true)
+
+    return next(e)
+  }).catch(async ($, e, next) => next(e))
+
   // view "line": one row above the prompt, no width taken from the conversation
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!view.isLine) return next(e)

@@ -7,7 +7,7 @@ A Progress pane for Claude Code: the steps of the current task, at a glance, on 
 - Registers a tool `mcp__progress-pane__progress`. The model sends the whole step list (`title`, `status` of `pending`, `in_progress` or `done`) and the pane redraws.
 - Also reads the built-in `TodoWrite`, when the model has it, into the same pane.
 - Adds one short advice to the system prompt (only where `TodoWrite` is not offered): call the tool for a task of 3 or more steps. No CLAUDE.md needed.
-- Under the steps, a Changes list: uncommitted files with `+added -removed`, read after Edit, Write, Bash and similar tools. Not the commits of this session.
+- Under the steps, a Changes list: uncommitted files with `+added -removed`, read after Edit, Write, Bash and similar tools, and at the end of every turn. Not the commits of this session.
 - Done steps fold into one line `✓ N earlier steps`; a click unfolds them. Long titles wrap beside their mark.
 - The steps are kept in the plugin's store, one record per session, the newest 20 sessions. After a restart or `--resume` they come back; the pane opens by itself only while a step is unfinished. A new session (or `/clear`) starts empty.
 - `/progress` opens the pane at any width. Opened by itself, the dock needs a terminal of 110 to 144 columns.
