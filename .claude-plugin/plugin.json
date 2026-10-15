@@ -1,6 +1,6 @@
 {
   "name": "progress-pane",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "A Progress pane on the right: the steps of the current task, and the uncommitted git changes under them.",
   "types": "./types/index.d.ts",
   "author": {

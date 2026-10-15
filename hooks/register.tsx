@@ -272,7 +272,10 @@ export const register: Register = (on, options) => {
             ))}
             {files.length > DIFF_MAX_ROWS && <Text dimColor>+{files.length - DIFF_MAX_ROWS} more</Text>}
             <Box marginTop={1}>
-              <Text color="success">+{sum.added}</Text>
+              <Box flexGrow={1}>
+                <Text dimColor>total</Text>
+              </Box>
+              <Text color="success"> +{sum.added}</Text>
               <Text color="error"> -{sum.removed}</Text>
             </Box>
           </Box>
