@@ -1,7 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import { MARK, clean, countDone, fromTodos } from './steps'
+import type { Step } from '../types'
+
+import { MARK, clean, countDone, fromTodos, hasOpenSteps, touch } from './steps'
 
 const PANE = 'progress'
 const TOOL = 'mcp__progress-pane__progress'
@@ -35,6 +37,30 @@ const MARK_COLOR = { done: 'success', in_progress: 'claude', pending: 'subtle' }
 
 const view = { isLine: false, columns: 18 }
 
+const INDEX_KEY = 'index'
+const keyOf = (id: string) => `steps:${id}`
+
+/** Keeps this session's steps across restarts: one record per session, the newest 20 sessions. */
+async function save($: any, list: Step[]): Promise<void> {
+  try {
+    const id = await $.session.id()
+    const old = await $.store.get(INDEX_KEY)
+    const { index, drop } = touch(Array.isArray(old) ? old.map(String) : [], id)
+    await $.store.set(keyOf(id), list)
+    await $.store.set(INDEX_KEY, index)
+    for (const gone of drop) await $.store.delete(keyOf(gone))
+  } catch { /* not persisted; the pane still works */ }
+}
+
+/** The steps this session had before a restart or --resume, or none. */
+async function load($: any): Promise<Step[]> {
+  try {
+    return clean(await $.store.get(keyOf(await $.session.id())))
+  } catch {
+    return []
+  }
+}
+
 export const register: Register = (on, options) => {
   if (options.enabled === false || options.enabled === 'false') return // switched off: no tool, no advice, no pane
   view.isLine = options.view === 'line'
@@ -66,6 +92,13 @@ export const register: Register = (on, options) => {
     })
     await $.command.register({ name: 'progress', description: 'Open the Progress pane' })
 
+    // after a restart or --resume: the steps come back; the pane opens only for unfinished ones
+    const kept = await load($)
+    if (kept.length > 0) {
+      await update($, steps, () => kept)
+      if (hasOpenSteps(kept)) await openPane($)
+    }
+
     return next(e)
   })
 
@@ -87,6 +120,7 @@ export const register: Register = (on, options) => {
     if (e.agentId) return { result: 'Progress is shown for the main session only.' }
     const list = clean((e as { steps?: unknown }).steps)
     await update($, steps, () => list)
+    await save($, list)
     await openPane($)
 
     return { result: `Progress saved: ${countDone(list)} of ${list.length} done.` }
@@ -96,7 +130,9 @@ export const register: Register = (on, options) => {
   on('tool.call', { tool: 'TodoWrite' }, async ($, e, next) => {
     const ran = await next(e)
     if (e.agentId || ran.deny !== undefined || ran.isError === true) return ran
-    await update($, steps, () => fromTodos(e.todos))
+    const todos = fromTodos(e.todos)
+    await update($, steps, () => todos)
+    await save($, todos)
     await openPane($)
 
     return ran

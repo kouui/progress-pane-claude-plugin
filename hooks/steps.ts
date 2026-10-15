@@ -23,3 +23,22 @@ export function fromTodos(todos: ReadonlyArray<{ content: string; status: string
 export function countDone(list: readonly Step[]): number {
   return list.filter(s => s.status === 'done').length
 }
+
+/** Sessions whose progress is kept. */
+export const KEEP_SESSIONS = 20
+
+/** True while some step is not done. */
+export function hasOpenSteps(list: readonly Step[]): boolean {
+  return list.some(s => s.status !== 'done')
+}
+
+/**
+ * The session index after `id` was saved: `id` moved to the end (most recent last), and the oldest
+ * dropped beyond `keep`. `drop` lists the ids whose records are to be deleted.
+ */
+export function touch(index: readonly string[], id: string, keep: number = KEEP_SESSIONS): { index: string[]; drop: string[] } {
+  const next = [...index.filter(x => x !== id), id]
+  const cut = Math.max(0, next.length - keep)
+
+  return { index: next.slice(cut), drop: next.slice(0, cut) }
+}

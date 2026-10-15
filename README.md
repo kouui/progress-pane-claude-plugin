@@ -8,6 +8,7 @@ A Progress pane for Claude Code: the steps of the current task, at a glance, on 
 - Also reads the built-in `TodoWrite`, when the model has it, into the same pane.
 - Adds one short advice to the system prompt (only where `TodoWrite` is not offered): call the tool for a task of 3 or more steps. No CLAUDE.md needed.
 - Done steps fold into one line `✓ N earlier steps`; a click unfolds them. Long titles wrap beside their mark.
+- The steps are kept in the plugin's store, one record per session, the newest 20 sessions. After a restart or `--resume` they come back; the pane opens by itself only while a step is unfinished. A new session (or `/clear`) starts empty.
 - `/progress` opens the pane at any width. Opened by itself, the dock needs a terminal of 110 to 144 columns.
 
 ## Options
@@ -29,7 +30,8 @@ Options are read when the plugin loads; reload or restart after a change.
 - The frame (left bar, close mark) is drawn by the engine; only the body is this plugin's.
 - A pane is docked beside the transcript or above the prompt; it cannot float over the conversation.
 - The steps are what the model writes. Whether it keeps them current is the model's habit, not enforced.
-- Tests cover the step cleaning and the tool's answer; colours, spacing and clicks were checked by eye only.
+- Whether `--resume` keeps the session id (so the steps come back) is by the engine's own doc, not tested here.
+- Tests cover the step cleaning, the session index and the tool's answer; colours, spacing and clicks were checked by eye only.
 
 ## Layout
 

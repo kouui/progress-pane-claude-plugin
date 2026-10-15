@@ -1,6 +1,6 @@
 {
   "name": "progress-pane",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A Progress pane on the right: the steps of the current task, from the built-in TodoWrite or from its own progress tool.",
   "types": "./types/index.d.ts",
   "author": {
