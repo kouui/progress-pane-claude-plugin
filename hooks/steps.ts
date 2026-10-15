@@ -42,3 +42,44 @@ export function touch(index: readonly string[], id: string, keep: number = KEEP_
 
   return { index: next.slice(cut), drop: next.slice(0, cut) }
 }
+
+/** The next status when the person clicks a step's mark: pending, in progress, done, pending. */
+export function nextStatus(status: Step['status']): Step['status'] {
+  return status === 'pending' ? 'in_progress' : status === 'in_progress' ? 'done' : 'pending'
+}
+
+/** Statuses by step title: the ones the person set, or the ones the model last sent. */
+export type Statuses = Record<string, Step['status']>
+
+/**
+ * The model's list, with the person's changes kept: a step the person changed keeps their status
+ * until the model sends a different status for it than it sent before (it changed it on purpose).
+ */
+export function mergeOverrides(
+  incoming: Step[],
+  overrides: Statuses,
+  view: Statuses,
+): { list: Step[]; overrides: Statuses; view: Statuses } {
+  const kept: Statuses = {}
+  const list = incoming.map((s): Step => {
+    const mine = overrides[s.title]
+    if (mine !== undefined && view[s.title] === s.status) {
+      kept[s.title] = mine
+
+      return { ...s, status: mine }
+    }
+
+    return s
+  })
+
+  return { list, overrides: kept, view: Object.fromEntries(incoming.map(s => [s.title, s.status])) }
+}
+
+/** The line the model reads about the person's changes; empty when there is nothing to say. */
+export function describeChanges(changes: Statuses, isCleared: boolean): string {
+  const parts = Object.entries(changes).map(([title, status]) => `"${title}" -> ${status}`)
+  if (isCleared) parts.unshift('cleared the whole list')
+  if (parts.length === 0) return ''
+
+  return `The person changed the progress list: ${parts.join('; ')}.`
+}

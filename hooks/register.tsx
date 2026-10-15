@@ -4,7 +4,8 @@ import type { Register } from 'claude-code'
 import type { DiffFile, Step } from '../types'
 
 import { baseName, groupByDir, mergeFiles, parseNumstat, parseUntracked, totals } from './diff'
-import { MARK, clean, countDone, fromTodos, hasOpenSteps, touch } from './steps'
+import { MARK, clean, countDone, describeChanges, fromTodos, hasOpenSteps, mergeOverrides, nextStatus, touch } from './steps'
+import type { Statuses } from './steps'
 
 const PANE = 'progress'
 const TOOL = 'mcp__progress-pane__progress'
@@ -94,11 +95,73 @@ async function load($: any): Promise<Step[]> {
   }
 }
 
+// the person's edits of the steps: kept over the model's next list, and told to the model once, 1.5 s after the last click
+const NOTICE_DEBOUNCE_MS = 1500
+const edits = {
+  overrides: {} as Statuses, // title -> status the person set
+  view: {} as Statuses, // title -> status the model last sent
+  pending: {} as Statuses, // changes the model was not told yet
+  isCleared: false,
+  lastAt: 0,
+  isWaking: false,
+  timer: undefined as undefined | { cancel?: () => void },
+}
+
+/** The notice of the changes not told yet, and forget them; undefined while there is none or the clicks are still coming. */
+function takeNotice(now: number, isForced: boolean): string | undefined {
+  const text = describeChanges(edits.pending, edits.isCleared)
+  if (text === '') return undefined
+  if (!isForced && now - edits.lastAt < NOTICE_DEBOUNCE_MS) return undefined
+  edits.pending = {}
+  edits.isCleared = false
+
+  return text
+}
+
+async function stageChange($: any, all: Step[]): Promise<void> {
+  edits.lastAt = await $.clock.now()
+  await save($, all)
+  if (!edits.isWaking) return
+  edits.timer?.cancel?.()
+  edits.timer = $.clock.after(NOTICE_DEBOUNCE_MS, async () => {
+    try {
+      const text = takeNotice(await $.clock.now(), true)
+      if (text) await $.prompt.submit({ text })
+    } catch { /* the notice goes with the next tool result or prompt instead */ }
+  })
+}
+
+/** The person clicked the mark of step `idx` of the whole list. */
+async function cycleStep($: any, idx: number): Promise<void> {
+  let changed: Step | undefined
+  let all: Step[] = []
+  await update($, steps, (cur: Step[]) => {
+    all = cur.map((x, j) => (j === idx ? (changed = { ...x, status: nextStatus(x.status) }) : x))
+
+    return all
+  })
+  const hit = changed as Step | undefined
+  if (hit === undefined) return
+  edits.overrides[hit.title] = hit.status
+  edits.pending[hit.title] = hit.status
+  await stageChange($, all)
+}
+
+async function clearSteps($: any): Promise<void> {
+  await update($, steps, () => [])
+  edits.overrides = {}
+  edits.view = {}
+  edits.pending = {}
+  edits.isCleared = true
+  await stageChange($, [])
+}
+
 export const register: Register = (on, options) => {
   if (options.enabled === false || options.enabled === 'false') return // switched off: no tool, no advice, no pane
   view.isLine = options.view === 'line'
   view.columns = Number(options.paneColumns) > 0 ? Number(options.paneColumns) : 27
   diff.isEnabled = options.showDiff !== false && options.showDiff !== 'false'
+  edits.isWaking = options.wakeOnChange === true || options.wakeOnChange === 'true'
 
   on('session.start', async ($, e, next) => {
     await $.tool.register({
@@ -153,19 +216,26 @@ export const register: Register = (on, options) => {
 
   on('tool.call', { tool: TOOL }, async ($, e) => {
     if (e.agentId) return { result: 'Progress is shown for the main session only.' }
-    const list = clean((e as { steps?: unknown }).steps)
+    const merged = mergeOverrides(clean((e as { steps?: unknown }).steps), edits.overrides, edits.view)
+    const list = merged.list
+    edits.overrides = merged.overrides
+    edits.view = merged.view
     await update($, steps, () => list)
     await save($, list)
     await openPane($)
+    const notice = takeNotice(0, true) // forced: the model is reading the list now, no debounce, no clock
 
-    return { result: `Progress saved: ${countDone(list)} of ${list.length} done.` }
+    return { result: `Progress saved: ${countDone(list)} of ${list.length} done.${notice ? ` ${notice} Their status is kept.` : ''}` }
   }).catch(() => ({ result: 'Progress could not be saved; continue the task.' }))
 
   // the built-in list feeds the same pane
   on('tool.call', { tool: 'TodoWrite' }, async ($, e, next) => {
     const ran = await next(e)
     if (e.agentId || ran.deny !== undefined || ran.isError === true) return ran
-    const todos = fromTodos(e.todos)
+    const merged = mergeOverrides(fromTodos(e.todos), edits.overrides, edits.view)
+    const todos = merged.list
+    edits.overrides = merged.overrides
+    edits.view = merged.view
     await update($, steps, () => todos)
     await save($, todos)
     await openPane($)
@@ -177,8 +247,17 @@ export const register: Register = (on, options) => {
   on('tool.call', async ($, e, next) => {
     const ran = await next(e)
     if (DIFF_TOOLS.has(e.tool)) await refreshChanges($, false)
+    const notice = takeNotice(await $.clock.now(), false)
+    if (notice === undefined || (ran as { deny?: string }).deny !== undefined) return ran
 
-    return ran
+    return { ...ran, context: [...((ran as { context?: readonly string[] }).context ?? []), notice] } as typeof ran
+  }).catch(async ($, e, next) => next(e))
+
+  // the person's own message: the notice goes along with it, whatever the debounce
+  on('prompt.submit', async ($, e, next) => {
+    const notice = takeNotice(await $.clock.now(), true)
+
+    return next(notice === undefined ? e : { ...e, context: [...(e.context ?? []), notice] })
   }).catch(async ($, e, next) => next(e))
 
   // at the end of every turn: files may have changed outside this session's tools
@@ -224,8 +303,13 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" paddingX={1} paddingTop={1}>
         {list.length > 0 && (
           <Box marginBottom={1}>
-            <Text bold color="claude">Progress</Text>
-            <Text dimColor> {done.length}/{list.length}</Text>
+            <Box flexGrow={1}>
+              <Text bold color="claude">Progress</Text>
+              <Text dimColor> {done.length}/{list.length}</Text>
+            </Box>
+            <Button plain key="clear" onPress={() => clearSteps($)}>
+              <Text dimColor>clear</Text>
+            </Button>
           </Box>
         )}
         {done.length > 0 && (
@@ -238,22 +322,24 @@ export const register: Register = (on, options) => {
           </Box>
         )}
         <Box flexDirection="column" gap={1}>
-          {shown.map((s, i) => (
-            // the mark keeps its own cell; a long title wraps beside it, under itself
-            <Box key={String(i)}>
-              <Text color={MARK_COLOR[s.status]} bold={s.status === 'in_progress'}>{MARK[s.status]} </Text>
-              <Box flexShrink={1}>
-                <Text
-                  wrap="wrap"
-                  bold={s.status === 'in_progress'}
-                  color={s.status === 'in_progress' ? 'claude' : undefined}
-                  dimColor={s.status !== 'in_progress'}
-                >
-                  {s.title}
-                </Text>
+          {shown.map((s, i) => {
+            const idx = list.indexOf(s)
+            const isOpen = s.status === 'in_progress'
+
+            // the mark and the title both press; a long title wraps beside the mark, under itself
+            return (
+              <Box key={String(i)}>
+                <Button plain key={`mark:${i}`} onPress={() => cycleStep($, idx)}>
+                  <Text color={MARK_COLOR[s.status]} bold={isOpen}>{MARK[s.status]} </Text>
+                </Button>
+                <Box flexShrink={1}>
+                  <Button plain key={`title:${i}`} onPress={() => cycleStep($, idx)}>
+                    <Text wrap="wrap" bold={isOpen} color={isOpen ? 'claude' : undefined} dimColor={!isOpen}>{s.title}</Text>
+                  </Button>
+                </Box>
               </Box>
-            </Box>
-          ))}
+            )
+          })}
         </Box>
         {files.length > 0 && (
           <Box flexDirection="column" marginTop={list.length > 0 ? 1 : 0}>

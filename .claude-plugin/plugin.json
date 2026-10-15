@@ -1,6 +1,6 @@
 {
   "name": "progress-pane",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "A Progress pane on the right: the steps of the current task, and the uncommitted git changes under them.",
   "types": "./types/index.d.ts",
   "author": {
@@ -32,6 +32,12 @@
       "title": "Show uncommitted changes",
       "description": "List the uncommitted files (+added -removed against HEAD) under the steps in the pane.",
       "default": true
+    },
+    "wakeOnChange": {
+      "type": "boolean",
+      "title": "Wake the model on a change",
+      "description": "After you change a step, start a turn of its own so the model reads the change at once. Off: the model reads it with its next tool result or your next message.",
+      "default": false
     }
   },
   "homepage": "https://github.com/kouui/progress-pane-claude-plugin",

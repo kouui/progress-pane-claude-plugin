@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { clean, countDone, fromTodos, hasOpenSteps, touch } from '../hooks/steps'
+import { clean, countDone, describeChanges, fromTodos, hasOpenSteps, mergeOverrides, nextStatus, touch } from '../hooks/steps'
 
 test('clean drops bad items and defaults the status', async () => {
   const list = clean([
@@ -45,4 +45,28 @@ test('hasOpenSteps is false only when every step is done', async () => {
   expect(hasOpenSteps([{ title: 'a', status: 'done' }])).toBe(false)
   expect(hasOpenSteps([{ title: 'a', status: 'done' }, { title: 'b', status: 'pending' }])).toBe(true)
   expect(hasOpenSteps([])).toBe(false)
+})
+
+test('nextStatus cycles pending, in progress, done', async () => {
+  expect(nextStatus('pending')).toBe('in_progress')
+  expect(nextStatus('in_progress')).toBe('done')
+  expect(nextStatus('done')).toBe('pending')
+})
+
+test('mergeOverrides keeps the status the person set until the model changes that step', async () => {
+  const sent = [{ title: 'a', status: 'in_progress' as const }, { title: 'b', status: 'pending' as const }]
+  // the person marked a as done; the model resends the same statuses: the person wins
+  const kept = mergeOverrides(sent, { a: 'done' }, { a: 'in_progress', b: 'pending' })
+  expect(kept.list.map(s => s.status)).toEqual(['done', 'pending'])
+  expect(kept.overrides).toEqual({ a: 'done' })
+  // the model now sends a as pending: it changed it on purpose, so the override goes
+  const changed = mergeOverrides([{ title: 'a', status: 'pending' }, sent[1]], kept.overrides, kept.view)
+  expect(changed.list.map(s => s.status)).toEqual(['pending', 'pending'])
+  expect(changed.overrides).toEqual({})
+})
+
+test('describeChanges names what the person changed', async () => {
+  expect(describeChanges({}, false)).toBe('')
+  expect(describeChanges({ a: 'done' }, false)).toBe('The person changed the progress list: "a" -> done.')
+  expect(describeChanges({}, true)).toBe('The person changed the progress list: cleared the whole list.')
 })
